@@ -34,65 +34,67 @@ def walk_bmarks(bmarks, level):
 
 # quality: specify JPEG lossy compression quality (50-150).  See man ddjvu for more information.
 def main(src, dest, quality = 80):
-    home = os.path.expanduser("~")
+    homeDir = os.path.expanduser("~")
 
-    if not os.path.exists(home + "/.dpsprep"):
-        os.mkdir(home + "/.dpsprep")
+    if not os.path.exists(homeDir + "/.dpsprep"):
+        os.mkdir(homeDir + "/.dpsprep")
 
-    tmp = home + "/.dpsprep"
+    tmpDir = homeDir + "/.dpsprep"
 
     # Reescape the filenames because we will just be sending them to commands via system
     # and we don't otherwise work directly with the DJVU and PDF files.
     # Also, stash the temp pdf in the clean spot
-    src = pipes.quote(src)
-    finaldest = pipes.quote(dest)
-    dest = home + '/.dpsprep/' + pipes.quote(dest)
+    srcQuoted = pipes.quote(src)
+    destQuoted = pipes.quote(dest)
+    destDirQuoted = os.path.dirname(destQuoted)
+    destFileNameQuoted = os.path.basename(destQuoted)
+    tmpDest = homeDir + '/.dpsprep/' + pipes.quote(destFileNameQuoted)
 
     # Check for a file presently being processed
-    if os.path.isfile(tmp + '/inprocess'):
-        fname = open(tmp + '/inprocess', 'r').read()
-        if not fname == src:
-            print("ERROR: Attempting to process %s before %s is completed. Aborting." % (src, fname))
+    if os.path.isfile(tmpDir + '/inprocess'):
+        fname = open(tmpDir + '/inprocess', 'r').read()
+        if not fname == srcQuoted:
+            print("ERROR: Attempting to process %s before %s is completed. Aborting." % (srcQuoted, fname))
             exit(3)
         else:
-            print("NOTE: Continuing to process %s..." % src)
+            print("NOTE: Continuing to process %s..." % srcQuoted)
     else:
         # Record the file we are about to process
-        open(tmp + '/inprocess', 'w').write(src)
+        open(tmpDir + '/inprocess', 'w').write(srcQuoted)
 
     # Make the PDF, compressing with JPG so they are not ridiculous in size
     # (cwd)
-    if not os.path.isfile(tmp + '/dumpd'):
-        retval = os.system("ddjvu -v -eachpage -quality=%d -format=tiff %s %s/pg%%06d.tif" % (quality, src, tmp))
+    if not os.path.isfile(tmpDir + '/dumpd'):
+        retval = os.system("ddjvu -v -eachpage -quality=%d -format=tiff %s %s/pg%%06d.tif" % (quality, srcQuoted, tmpDir))
         if retval > 0:
             print("\nNOTE: There was a problem dumping the pages to tiff.  See above output")
             exit(retval)
 
         print("Flat PDF made.")
-        open(tmp + '/dumpd', 'a').close()
+        open(tmpDir + '/dumpd', 'a').close()
     else:
         print("Inflated PDFs already found, using these...")
 
     # Extract and embed the text
-    if not os.path.isfile(tmp + '/hocrd'):
-        cnt = int(subprocess.check_output("djvused %s -u -e n" % src, shell=True))
+    if not os.path.isfile(tmpDir + '/hocrd'):
+        cnt = int(subprocess.check_output("djvused %s -u -e n" % srcQuoted, shell=True))
 
         for i in range(1, cnt):
-            retval = os.system("djvu2hocr -p %d %s | sed 's/ocrx/ocr/g' > %s/pg%06d.html" % (i, src, tmp, i))
+            retval = os.system("djvu2hocr -p %d %s | sed 's/ocrx/ocr/g' > %s/pg%06d.html" % (i, srcQuoted, tmpDir, i))
             if retval > 0:
                 print("\nNOTE: There was a problem extracting the OCRd text on page %d, see above output." % i)
                 exit(retval)
 
         print("OCRd text extracted.")
-        open(tmp + '/hocrd', 'a').close()
+        open(tmpDir + '/hocrd', 'a').close()
     else:
         print("Using existing hOCRd output...")
 
     # Is sloppy and dumps to present directory
-    if not os.path.isfile(tmp + '/beadd'):
+    if not os.path.isfile(tmpDir + '/beadd'):
         cwd = os.getcwd()
-        os.chdir(tmp)
-        retval = os.system('pdfbeads * > ' + dest)
+        os.chdir(tmpDir)
+        retval = os.system('pdfbeads * > ' + tmpDest)
         if retval > 0:
             print("\nNOTE: There was a problem beading, see above output.")
             exit(retval)
@@ -110,21 +112,21 @@ def main(src, dest, quality = 80):
     # Extract the bookmark data from the DJVU document
     # (scratch)
     retval = 0
-    retval = retval | os.system("djvused %s -u -e 'print-outline' > %s/bmarks.out" % (src, tmp))
+    retval = retval | os.system("djvused %s -u -e 'print-outline' > %s/bmarks.out" % (srcQuoted, tmpDir))
     print("Bookmarks extracted.")
     # Check for zero-length outline
 
-    if os.stat("%s/bmarks.out" % tmp).st_size > 0:
+    if os.stat("%s/bmarks.out" % tmpDir).st_size > 0:
         # Extract the metadata from the PDF document
-        retval = retval | os.system("pdftk %s dump_data_utf8 > %s/pdfmetadata.out" % (dest, tmp))
+        retval = retval | os.system("pdftk %s dump_data_utf8 > %s/pdfmetadata.out" % (tmpDest, tmpDir))
         print("Original PDF metadata extracted.")
 
         # Parse the sexpr
-        pdfbmarks = walk_bmarks(sexpdata.load(open(tmp + '/bmarks.out')), 0)
+        pdfbmarks = walk_bmarks(sexpdata.load(open(tmpDir + '/bmarks.out')), 0)
 
         # Integrate the parsed bookmarks into the PDF metadata
         p = re.compile('NumberOfPages: [0-9]+')
-        metadata = open("%s/pdfmetadata.out" % tmp, 'r').read()
+        metadata = open("%s/pdfmetadata.out" % tmpDir, 'r').read()
 
         for m in p.finditer(metadata):
             loc = int(m.end())
@@ -132,16 +134,17 @@ def main(src, dest, quality = 80):
             newoutput = metadata[:loc] + "\n" + pdfbmarks[:-1] + metadata[loc:]
 
             # Update the PDF metadata
-            open("%s/pdfmetadata.in" % tmp, 'w').write(newoutput)
+            open("%s/pdfmetadata.in" % tmpDir, 'w').write(newoutput)
             retval = retval | os.system(
-                "pdftk %s update_info_utf8 %s output %s" % (dest, tmp + '/pdfmetadata.in', finaldest))
+                "pdftk %s update_info_utf8 %s output %s" % (tmpDest, tmpDir + '/pdfmetadata.in', destQuoted))
     else:
-        retval = retval | os.system("mv %s %s" % (dest, finaldest))
+        retval = retval | os.system("mkdir -p %s" % destDirQuoted)
+        retval = retval | os.system("mv %s %s" % (tmpDest, destQuoted))
         print("No bookmarks were present!")
 
     # If retval is shit, don't delete temp files
     if retval == 0:
-        os.system("rm %s/*" % tmp)
+        os.system("rm %s/*" % tmpDir)
         print("SUCCESS. Temporary files cleared.")
         exit(0)
     else:
@@ -149,4 +152,4 @@ def main(src, dest, quality = 80):
             "There were errors in the metadata step.  OCRd text is fine, pdf is almost ready.  See above output for cluse")
         exit(retval)
 
-main('/mnt/c/Users/progm/Downloads/GTD/GTD-1988-11.djvu', 'GTD-1988-11.80.pdf', 80)
+main('/mnt/c/Users/progm/Downloads/GTD/GTD-1988-10.djvu', './123/GTD-1988-10.80.pdf', 80)
