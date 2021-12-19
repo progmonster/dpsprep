@@ -6,6 +6,7 @@
 
 
 # python dpsprep.py /mnt/c/Users/progm/Downloads/GTD/GTD-1990-09.djvu GTD-1990-09.pdf
+# main('/mnt/c/Users/progm/Downloads/GTD/GTD-1988-10.djvu', './123/GTD-1988-10.80.pdf', 80)
 
 
 import sexpdata
@@ -13,6 +14,7 @@ import os
 import pipes
 import subprocess
 import re
+from pathlib import Path
 
 # Recursively walks the sexpr tree and outputs a metadata format understandable by pdftk
 def walk_bmarks(bmarks, level):
@@ -55,7 +57,7 @@ def main(src, dest, quality = 80):
         fname = open(tmpDir + '/inprocess', 'r').read()
         if not fname == srcQuoted:
             print("ERROR: Attempting to process %s before %s is completed. Aborting." % (srcQuoted, fname))
-            exit(3)
+            return 3
         else:
             print("NOTE: Continuing to process %s..." % srcQuoted)
     else:
@@ -68,7 +70,7 @@ def main(src, dest, quality = 80):
         retval = os.system("ddjvu -v -eachpage -quality=%d -format=tiff %s %s/pg%%06d.tif" % (quality, srcQuoted, tmpDir))
         if retval > 0:
             print("\nNOTE: There was a problem dumping the pages to tiff.  See above output")
-            exit(retval)
+            return retval
 
         print("Flat PDF made.")
         open(tmpDir + '/dumpd', 'a').close()
@@ -83,7 +85,7 @@ def main(src, dest, quality = 80):
             retval = os.system("djvu2hocr -p %d %s | sed 's/ocrx/ocr/g' > %s/pg%06d.html" % (i, srcQuoted, tmpDir, i))
             if retval > 0:
                 print("\nNOTE: There was a problem extracting the OCRd text on page %d, see above output." % i)
-                exit(retval)
+                return retval
 
         print("OCRd text extracted.")
         open(tmpDir + '/hocrd', 'a').close()
@@ -97,7 +99,7 @@ def main(src, dest, quality = 80):
         retval = os.system('pdfbeads * > ' + tmpDest)
         if retval > 0:
             print("\nNOTE: There was a problem beading, see above output.")
-            exit(retval)
+            return retval
 
         print("Beading complete.")
         open('beadd', 'a').close()
@@ -146,10 +148,24 @@ def main(src, dest, quality = 80):
     if retval == 0:
         os.system("rm %s/*" % tmpDir)
         print("SUCCESS. Temporary files cleared.")
-        exit(0)
+        return 0
     else:
         print(
             "There were errors in the metadata step.  OCRd text is fine, pdf is almost ready.  See above output for cluse")
-        exit(retval)
+        return retval
 
-main('/mnt/c/Users/progm/Downloads/GTD/GTD-1988-10.djvu', './123/GTD-1988-10.80.pdf', 80)
+def convertFile(djvuFile, quality = 80):
+    pdfFileName = os.path.splitext(os.path.basename(djvuFile))[0] + ".pdf"
+
+    main(djvuFile, os.path.join(os.path.dirname(djvuFile), pdfFileName), quality)
+
+def convertInDir(dir):
+    for path in Path(dir).rglob("*.djvu"):
+        print(path.absolute())
+        convertFile(str(path.absolute()), quality=80)
+
+
+#main('/mnt/c/Users/progm/Downloads/GTD/GTD-1988-09.djvu', './123/GTD-1988-09.pdf', 80)
+#convert('/mnt/c/Users/progm/Downloads/GTD/GTD-1988-03.djvu')
+convertInDir("/mnt/c/Users/progm/Downloads/GTD")
+
