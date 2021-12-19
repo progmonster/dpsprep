@@ -20,8 +20,8 @@ def walk_bmarks(bmarks, level):
         elif isinstance(j, str):
             if not wroteTitle:
                 output = output + "BookmarkBegin\nBookmarkTitle: %s\nBookmarkLevel: %d\n" % (j, level)
-                wroteTitle = True 
-            else:    
+                wroteTitle = True
+            else:
                 output = output + "BookmarkPageNumber: %s\n" % j.split('#')[1]
                 wroteTitle = False
         else:
@@ -32,7 +32,7 @@ home = os.path.expanduser("~")
 
 # From Python docs, nice and slick command line arguments
 parser = argparse.ArgumentParser(description='Convert DJVU format to PDF format preserving OCRd text and metadata.  Very useful for Sony Digital Paper system')
-parser.add_argument('src', metavar='djvufile', type=str, 
+parser.add_argument('src', metavar='djvufile', type=str,
                     help='the source DJVU file')
 parser.add_argument('dest', metavar='pdffile', type=str,
                     help='the destination PDF file')
@@ -46,21 +46,21 @@ if not os.path.exists(home + "/.dpsprep"):
 
 tmp = home + "/.dpsprep"
 
-# Reescape the filenames because we will just be sending them to commands via system 
+# Reescape the filenames because we will just be sending them to commands via system
 # and we don't otherwise work directly with the DJVU and PDF files.
 # Also, stash the temp pdf in the clean spot
 args.src = pipes.quote(args.src)
 finaldest = pipes.quote(args.dest)
 args.dest = home + '/.dpsprep/' + pipes.quote(args.dest)
-    
+
 # Check for a file presently being processed
 if os.path.isfile(tmp + '/inprocess'):
     fname = open(tmp + '/inprocess', 'r').read()
     if not fname == args.src:
-        print "ERROR: Attempting to process %s before %s is completed. Aborting." % (args.src, fname)
+        print("ERROR: Attempting to process %s before %s is completed. Aborting." % (args.src, fname))
         exit(3)
     else:
-        print "NOTE: Continuing to process %s..." % args.src
+        print("NOTE: Continuing to process %s..." % args.src)
 else:
     # Record the file we are about to process
     open(tmp + '/inprocess', 'w').write(args.src)
@@ -70,13 +70,13 @@ else:
 if not os.path.isfile(tmp + '/dumpd'):
     retval = os.system("ddjvu -v -eachpage -format=tiff %s %s/pg%%06d.tif" % (args.src, tmp))
     if retval > 0:
-        print "\nNOTE: There was a problem dumping the pages to tiff.  See above output"
+        print("\nNOTE: There was a problem dumping the pages to tiff.  See above output")
         exit(retval)
 
-    print "Flat PDF made."
+    print("Flat PDF made.")
     open(tmp + '/dumpd', 'a').close()
 else:
-    print "Inflated PDFs already found, using these..."
+    print("Inflated PDFs already found, using these...")
 
 # Extract and embed the text
 if not os.path.isfile(tmp + '/hocrd'):
@@ -85,13 +85,13 @@ if not os.path.isfile(tmp + '/hocrd'):
     for i in range(1,cnt):
         retval = os.system("djvu2hocr -p %d %s | sed 's/ocrx/ocr/g' > %s/pg%06d.html" % (i, args.src, tmp, i))
         if retval > 0:
-            print "\nNOTE: There was a problem extracting the OCRd text on page %d, see above output." % i
+            print("\nNOTE: There was a problem extracting the OCRd text on page %d, see above output." % i)
             exit(retval)
 
-    print "OCRd text extracted."
+    print("OCRd text extracted.")
     open(tmp + '/hocrd', 'a').close()
 else:
-    print "Using existing hOCRd output..."
+    print("Using existing hOCRd output...")
 
 # Is sloppy and dumps to present directory
 if not os.path.isfile(tmp + '/beadd'):
@@ -99,32 +99,32 @@ if not os.path.isfile(tmp + '/beadd'):
     os.chdir(tmp)
     retval = os.system('pdfbeads * > ' + args.dest)
     if retval > 0:
-        print "\nNOTE: There was a problem beading, see above output."
+        print("\nNOTE: There was a problem beading, see above output.")
         exit(retval)
-    
-    print "Beading complete."
+
+    print("Beading complete.")
     open('beadd', 'a').close()
     os.chdir(cwd)
 else:
-    print "Existing destination found, assuming beading already complete..."
+    print("Existing destination found, assuming beading already complete...")
 
 ###########################$
 #
 # At this point, the OCRd text is now properly placed within the PDF file.
-# Now, we need to add the links and table of contents! 
+# Now, we need to add the links and table of contents!
 
-# Extract the bookmark data from the DJVU document 
+# Extract the bookmark data from the DJVU document
 # (scratch)
 retval = 0
 retval = retval | os.system("djvused %s -u -e 'print-outline' > %s/bmarks.out" % (args.src, tmp))
-print "Bookmarks extracted."
+print("Bookmarks extracted.")
 
 # Check for zero-length outline
 if os.stat("%s/bmarks.out" % tmp).st_size > 0:
 
     # Extract the metadata from the PDF document
     retval = retval | os.system("pdftk %s dump_data_utf8 > %s/pdfmetadata.out" % (args.dest, tmp))
-    print "Original PDF metadata extracted."
+    print("Original PDF metadata extracted.")
 
     # Parse the sexpr
     pdfbmarks = walk_bmarks(sexpdata.load(open(tmp + '/bmarks.out')), 0)
@@ -144,13 +144,14 @@ if os.stat("%s/bmarks.out" % tmp).st_size > 0:
 
 else:
     retval = retval | os.system("mv %s %s" % (args.dest, finaldest))
-    print "No bookmarks were present!"
+    print("No bookmarks were present!")
 
 # If retval is shit, don't delete temp files
 if retval == 0:
     os.system("rm %s/*" % tmp)
-    print "SUCCESS. Temporary files cleared."
+    print("SUCCESS. Temporary files cleared.")
     exit(0)
 else:
-    print "There were errors in the metadata step.  OCRd text is fine, pdf is almost ready.  See above output for cluse"
+    print(
+        "There were errors in the metadata step.  OCRd text is fine, pdf is almost ready.  See above output for cluse")
     exit(retval)
